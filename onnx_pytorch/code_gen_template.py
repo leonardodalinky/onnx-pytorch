@@ -19,8 +19,9 @@ import torchvision
 '''
 
   @classmethod
-  def model(cls, model_init, model_forward, model_method, test_run_model):
-    return f'''{cls.autogen_head()}
+  def model(cls, model_init, model_forward, model_method, test_run_model, read_variables=True):
+    if read_variables:
+      return f'''{cls.autogen_head()}
 {cls.imports()}
 
 class Model(nn.Module):
@@ -34,6 +35,25 @@ class Model(nn.Module):
       requires_grad = v.dtype.is_floating_point or v.dtype.is_complex
       self._vars[os.path.basename(b)[:-4]] = nn.Parameter(v, requires_grad=requires_grad)
     {model_init}
+    self._vars.requires_grad_(True)
+
+  def forward(self, *inputs):
+    {model_forward}
+
+  {model_method}
+{test_run_model}
+'''
+    else:
+      return f'''{cls.autogen_head()}
+{cls.imports()}
+
+class Model(nn.Module):
+  def __init__(self):
+    super(Model, self).__init__()
+    self._vars = nn.ParameterDict()
+    self._regularizer_params = []
+    {model_init}
+    self._vars.requires_grad_(True)
 
   def forward(self, *inputs):
     {model_forward}

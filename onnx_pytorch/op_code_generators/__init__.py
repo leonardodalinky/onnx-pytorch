@@ -1,4 +1,6 @@
 import logging
+import warnings
+from typing import Dict
 
 import onnx
 import onnx.numpy_helper
@@ -42,7 +44,21 @@ class OpCodeGenerator:
               f"Cannot get default value for {a} of {self.onnx_op}.")
 
   def gen(self, node, value_infos, initializers):
-    raise Exception
+    """
+    Generate code for a node.
+
+    Parameters
+    ----------
+    node : onnx.NodeProto
+    value_infos : Dict[str, onnx.ValueInfoProto]
+    initializers : Dict[str, onnx.TensorProto]
+
+    Returns
+    -------
+    code : Dict[str, str]
+      Contains `init` and `forward` code.
+    """
+    raise NotImplementedError("Base class of OpCodeGenerator should not be used.")
 
   def get_attr_value_dict(self, node):
     attr_value_dict = {}
@@ -144,10 +160,27 @@ class ReduceOpCodeGenerator(OpCodeGenerator):
     return dim
 
 
+# cache for existing opcode generator
 __op_gen_dict = {}
 
 
 def get_op_code_generator(op, **kwargs):
+  """
+  Get OpCodeGenerator by op name.
+
+  If op is not in cache, create a new one. If op is in cache, return the cached one.
+
+  Parameters
+  ----------
+  op : str
+  **kwargs : dict, optional
+
+  Returns
+  -------
+  _ : OpCodeGenerator or None
+    If op is not supported or not found, return None.
+  """
+  warnings.warn("get_op_code_generator is deprecated, use code_generator_loader instead.", DeprecationWarning)
   op_code_gen_name = "{}OpCodeGenerator".format(op)
   if op_code_gen_name in __op_gen_dict:
     return __op_gen_dict[op_code_gen_name]
@@ -159,4 +192,9 @@ def get_op_code_generator(op, **kwargs):
 
 
 def clear_op_code_generator():
+  """
+  Clear all cached opcode generators.
+  """
+  warnings.warn("clear_op_code_generator is deprecated, use code_generator_loader instead.", DeprecationWarning)
+  global __op_gen_dict
   __op_gen_dict = {}
