@@ -127,8 +127,10 @@ class ModelCodeGenerator:
     """
     if type(m) in (list, tuple, set):
       self.init_parts.extend(m)
-    else:
+    elif isinstance(m, str):
       self.init_parts.append(m)
+    else:
+      raise ValueError(f"Unsupported type {type(m)}.")
 
   def add_random_initializer(self, initializer: onnx.TensorProto):
     # randomize initializer
@@ -158,8 +160,10 @@ class ModelCodeGenerator:
     """
     if type(m) in (list, tuple, set):
       self.forward_parts.extend(m)
-    else:
+    elif isinstance(m, str):
       self.forward_parts.append(m)
+    else:
+      raise ValueError(f"Unsupported type {type(m)}.")
 
   def add_forward_return(self, outputs_value_infos):
     """

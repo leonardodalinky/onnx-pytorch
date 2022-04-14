@@ -1,6 +1,6 @@
 import logging
 import warnings
-from typing import Dict
+from typing import Dict, Iterable, Union, Any
 
 import onnx
 import onnx.numpy_helper
@@ -8,42 +8,51 @@ from onnx.numpy_helper import to_array
 import torch
 
 import glob
+import abc
 import os
 
-modules = glob.glob(os.path.join(os.path.dirname(__file__), "*.py"))
+from pathlib import Path
+
 __all__ = [
-    os.path.basename(f)[:-3]
-    for f in modules
-    if os.path.isfile(f) and not f.endswith('__init__.py')
-] + ["get_op_code_generator"]
+  Path(f).stem
+  for f in glob.glob(os.path.join(os.path.dirname(__file__), "*.py"))
+  if os.path.isfile(f) and not f.endswith('__init__.py')
+] + ["OpCodeGenerator", "CustomOpCodeGenerator"]
 
 
 class OpCodeGenerator:
+  __OP_DOMAIN__: str = ""
+  __OP_VERSION__: int = 1
 
   def __init__(self,
                onnx_ver=onnx.defs.onnx_opset_version(),
                torch_ver=torch.__version__):
     self.onnx_ver = onnx_ver
     self.torch_ver = torch_ver
-    self.onnx_op = self.__class__.__name__.replace("OpCodeGenerator", "")
-    self.schema = onnx.defs.get_schema(self.onnx_op,
-                                       max_inclusive_version=onnx_ver)
+    self.domain = self.__OP_DOMAIN__ or ""
+    self.attr_default: Dict[str, Any] = {}
+    self.op_ver = self.__OP_VERSION__ or 1
 
     # Should inherit from ModelCodeGenerator
     self.rename_helper = None
     self.tensor_inplace = None
 
-    if self.schema is not None:
-      self.attr_default = {}
-      for a, i in self.schema.attributes.items():
-        try:
-          default_value = onnx.helper.get_attribute_value(i.default_value)
-          self.attr_default[a] = default_value
-        except Exception as e:
-          logging.warning(
-              f"Cannot get default value for {a} of {self.onnx_op}.")
+    if self.domain == "":
+      self.onnx_op = self.__class__.__name__.replace("OpCodeGenerator", "")
+      self.schema = onnx.defs.get_schema(self.onnx_op,
+                                         max_inclusive_version=onnx_ver)
 
-  def gen(self, node, value_infos, initializers):
+      if self.schema is not None:
+        self.op_ver = self.schema.since_version
+        for a, i in self.schema.attributes.items():
+          try:
+            default_value = onnx.helper.get_attribute_value(i.default_value)
+            self.attr_default[a] = default_value
+          except Exception as e:
+            logging.warning(
+                f"Cannot get default value for {a} of {self.onnx_op}.")
+
+  def gen(self, node, value_infos, initializers) -> Dict[str, Union[Iterable[str], str]]:
     """
     Generate code for a node.
 
@@ -55,7 +64,7 @@ class OpCodeGenerator:
 
     Returns
     -------
-    code : Dict[str, str]
+    code : Dict[str, Union[Iterable[str], str]]
       Contains `init` and `forward` code.
     """
     raise NotImplementedError("Base class of OpCodeGenerator should not be used.")
@@ -108,7 +117,8 @@ class OpCodeGenerator:
 
     return inputs_str, outputs_str
 
-  def gen_params_str(self, **kwargs):
+  @staticmethod
+  def gen_params_str(**kwargs):
     params = []
     for k, v in kwargs.items():
       v_str = v if type(v) == str else v.__repr__()
@@ -129,11 +139,12 @@ class OpCodeGenerator:
       )
     return rs
 
-  def get_shape(self, value, value_infos):
-    if value not in value_infos:
+  @staticmethod
+  def get_shape(value_name: str, value_infos: Dict[str, onnx.ValueInfoProto]):
+    if value_name not in value_infos:
       return None
     shape = []
-    for d in value_infos[value].type.tensor_type.shape.dim:
+    for d in value_infos[value_name].type.tensor_type.shape.dim:
       if d.dim_param != "":
         shape.append(-1)
       else:
@@ -160,7 +171,20 @@ class ReduceOpCodeGenerator(OpCodeGenerator):
     return dim
 
 
-# cache for existing opcode generator
+class CustomOpCodeGenerator(OpCodeGenerator):
+  __OP_DOMAIN__ = "custom"
+
+  def __init__(self, torch_ver=torch.__version__):
+    super(CustomOpCodeGenerator, self).__init__(torch_ver=torch_ver)
+    self.attr_default = self.gen_default_attr_values()
+
+  @staticmethod
+  @abc.abstractmethod
+  def gen_default_attr_values() -> Dict[str, Any]:
+    return dict()
+
+
+# Deprecated: cache for existing opcode generator
 __op_gen_dict = {}
 
 
